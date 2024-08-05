@@ -1,4 +1,6 @@
 #![cfg(test)]
+use std::mem;
+
 use super::*;
 
 #[test]
@@ -56,3 +58,14 @@ fn len_push_pop_orthagonal() {
 fn len_push_pop_i_superset() {
     single_len_push_pop::<i128>();
 }
+
+#[test]
+fn len_push_pop_nonmax() {
+    single_len_push_pop::<nonmax::NonMaxU8>();
+    single_len_push_pop::<nonmax::NonMaxU32>();
+    single_len_push_pop::<nonmax::NonMaxU64>();
+    single_len_push_pop::<nonmax::NonMaxU128>();
+    single_len_push_pop::<nonmax::NonMaxUsize>();
+}
+
+const _: () = debug_assert!(mem::size_of::<VecNode<isize, nonmax::NonMaxU32>>() == 16);

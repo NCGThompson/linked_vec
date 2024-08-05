@@ -1,6 +1,5 @@
+use nonmax;
 use std::{borrow::Borrow, fmt::Debug};
-
-// pub(crate) fn debug_unwrap_unchecked(res)
 
 macro_rules! debug_unwrap {
     ($result:expr) => {
@@ -13,9 +12,9 @@ macro_rules! debug_unwrap {
 }
 
 macro_rules! min_max {
-    ($int_type1:ty, $int_type2:ty) => {{
-        let m1 = <$int_type1>::MAX as u128;
-        let m2 = <$int_type2>::MAX as u128;
+    ($int_max1:expr, $int_max2:expr) => {{
+        let m1 = $int_max2 as u128;
+        let m2 = $int_max2 as u128;
         if m1 < m2 {
             m1 as _
         } else {
@@ -65,7 +64,7 @@ macro_rules! storeindex_for_prim {
         impl StoreIndex for $impor {
             type Error = <Self as TryFrom<usize>>::Error;
 
-            const MAX_USIZE: usize = min_max!(Self, usize);
+            const MAX_USIZE: usize = min_max!(Self::MAX, usize::MAX);
 
             fn to_usize(&self) -> usize {
                 usize::try_from(*self).unwrap()
@@ -102,6 +101,50 @@ storeindex_for_prim!(u32);
 storeindex_for_prim!(u64);
 storeindex_for_prim!(u128);
 storeindex_for_prim!(usize);
+
+macro_rules! storeindex_for_nonmax {
+    ($prim:ty, $impor:ty) => {
+        impl StoreIndex for $impor {
+            type Error = nonmax::TryFromIntError;
+
+            const MAX_USIZE: usize = min_max!(Self::MAX.get(), usize::MAX);
+
+            fn to_usize(&self) -> usize {
+                usize::try_from(self.get()).unwrap()
+            }
+
+            unsafe fn to_usize_unchecked(&self) -> usize {
+                // Safety: Caller ensures self came from try_from_usize
+                // or from_usize_unchecked
+                unsafe { debug_unwrap!(usize::try_from(self.get())) }
+            }
+
+            fn try_from_usize(value: usize) -> Result<Self, Self::Error> {
+                let intermediate = Self::try_from(value as $prim)?;
+                Ok(Self::try_from(intermediate)?)
+            }
+
+            unsafe fn from_usize_unchecked(value: usize) -> Self {
+                // Safety: Caller ensures value <= MAX_USIZE, which is
+                // in the range of Self. Self's MIN is at most 0.
+                unsafe { debug_unwrap!(Self::try_from(value as $prim)) }
+            }
+        }
+    };
+}
+
+storeindex_for_nonmax!(i8, nonmax::NonMaxI8);
+storeindex_for_nonmax!(i16, nonmax::NonMaxI16);
+storeindex_for_nonmax!(i32, nonmax::NonMaxI32);
+storeindex_for_nonmax!(i64, nonmax::NonMaxI64);
+storeindex_for_nonmax!(i128, nonmax::NonMaxI128);
+storeindex_for_nonmax!(isize, nonmax::NonMaxIsize);
+storeindex_for_nonmax!(u8, nonmax::NonMaxU8);
+storeindex_for_nonmax!(u16, nonmax::NonMaxU16);
+storeindex_for_nonmax!(u32, nonmax::NonMaxU32);
+storeindex_for_nonmax!(u64, nonmax::NonMaxU64);
+storeindex_for_nonmax!(u128, nonmax::NonMaxU128);
+storeindex_for_nonmax!(usize, nonmax::NonMaxUsize);
 
 #[derive(Debug, Default)]
 pub(super) struct VecNode<T, I = usize> {
