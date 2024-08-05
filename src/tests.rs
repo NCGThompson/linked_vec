@@ -68,4 +68,51 @@ fn len_push_pop_nonmax() {
     single_len_push_pop::<nonmax::NonMaxUsize>();
 }
 
+#[test]
+fn overflow_baseline() {
+    let mut obj = LinkedVec::<i64, i8>::new();
+    obj.extend(0..=127);
+    assert_eq!(i8::get_max(), 127);
+
+    let mut obj = LinkedVec::<i64, u8>::new();
+    obj.extend(0..=255);
+    assert_eq!(u8::get_max(), 255);
+
+    let mut obj = LinkedVec::<i64, nonmax::NonMaxI8>::new();
+    obj.extend(0..=126);
+    assert_eq!(nonmax::NonMaxI8::get_max(), 126);
+
+    let mut obj = LinkedVec::<i64, nonmax::NonMaxU8>::new();
+    obj.extend(0..=254);
+    assert_eq!(nonmax::NonMaxU8::get_max(), 254);
+}
+
+#[test]
+#[should_panic(expected = "capacity overflow")]
+fn overflow_i_a() {
+    let mut obj = LinkedVec::<i64, i8>::new();
+    obj.extend(0..=128);
+}
+
+#[test]
+#[should_panic(expected = "capacity overflow")]
+fn overflow_i_b() {
+    let mut obj = LinkedVec::<i64, i8>::new();
+    obj.extend(0..);
+}
+
+#[test]
+#[should_panic(expected = "capacity overflow")]
+fn overflow_ni_a() {
+    let mut obj = LinkedVec::<i64, nonmax::NonMaxI8>::new();
+    obj.extend(0..=127);
+}
+
+#[test]
+#[should_panic(expected = "capacity overflow")]
+fn overflow_ni_b() {
+    let mut obj = LinkedVec::<i64, nonmax::NonMaxI8>::new();
+    obj.extend(0..);
+}
+
 const _: () = debug_assert!(mem::size_of::<VecNode<isize, nonmax::NonMaxU32>>() == 16);

@@ -13,7 +13,7 @@ macro_rules! debug_unwrap {
 
 macro_rules! min_max {
     ($int_max1:expr, $int_max2:expr) => {{
-        let m1 = $int_max2 as u128;
+        let m1 = $int_max1 as u128;
         let m2 = $int_max2 as u128;
         if m1 < m2 {
             m1 as _
