@@ -1,16 +1,19 @@
 mod inner_types;
 mod tests;
 
-use inner_types::VecNode;
+use std::fmt::Debug;
+use std::usize;
+
+use inner_types::{StoreIndex, VecNode};
 
 #[derive(Debug)]
-pub struct LinkedVec<T> {
-    data: Vec<VecNode<T, usize>>,
-    head: Option<usize>,
-    tail: Option<usize>,
+pub struct LinkedVec<T, I: StoreIndex + Copy> {
+    data: Vec<VecNode<T, I>>,
+    head: Option<I>,
+    tail: Option<I>,
 }
 
-impl<T> LinkedVec<T> {
+impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
     pub const fn new() -> Self {
         LinkedVec {
             data: Vec::new(),
@@ -29,18 +32,18 @@ impl<T> LinkedVec<T> {
 
     /// Inserts an element first in the linked list and last in the physical array.
     pub fn push_front(&mut self, value: T) {
-        self.data.push(VecNode::new(value));
+        let inserted = self.push_p(value);
 
         // Insert at head = Insert before whatever is currently pointed to by head.
-        self.insert_node_before(self.len() - 1, self.head)
+        self.insert_node_before(inserted, self.head)
     }
 
     /// Inserts an element last in the linked list and last in the physical array.
     pub fn push_back(&mut self, value: T) {
-        self.data.push(VecNode::new(value));
+        let inserted = self.push_p(value);
 
         // Insert at tail = Insert after whatever is currently pointed to by tail.
-        self.insert_node_after(self.len() - 1, self.tail)
+        self.insert_node_after(inserted, self.tail)
     }
 
     /// Remove and return first element in the linked list, if any.
@@ -51,7 +54,7 @@ impl<T> LinkedVec<T> {
 
         // head should be some because not is_empty
         let i = self.head.unwrap();
-        Some(self.swap_remove(i))
+        Some(self.in_swap_remove(i.to_usize()))
     }
 
     /// Remove and return last element in the linked list, if any.
@@ -62,27 +65,44 @@ impl<T> LinkedVec<T> {
 
         // tail should be some because not is_empty
         let i = self.tail.unwrap();
-        Some(self.swap_remove(i))
+        Some(self.in_swap_remove(i.to_usize()))
     }
 
     /// Remove and return last element in the physical array, if any.
     pub fn pop(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
-        }
-
-        // subtraction shouldn't wrap because not is_empty
-        let i = self.len() - 1;
-        Some(self.swap_remove(i))
+        };
+        self.remove_node_p(self.len() - 1);
+        // Safety: Already checked that data.len() is not empty
+        Some(unsafe { self.data.pop().unwrap_unchecked().payload })
     }
 
     /// Remove and return the element pointed to by the index on the physical array.
     pub fn swap_remove(&mut self, index: usize) -> T {
-        self.remove_node_l(index);
+        if index >= self.len() {
+            index_out_of_bounds(index, self.len())
+        }
+        self.in_swap_remove(index)
+    }
+
+    fn push_p(&mut self, value: T) -> I {
+        let start_len = self.len();
+        if start_len > I::MAX_USIZE {
+            capacity_overflow()
+        }
+        self.data.push(VecNode::new(value));
+
+        // Safety: Already checked that start_len <= MAX_USIZE
+        unsafe { I::from_usize_unchecked(start_len) }
+    }
+
+    fn in_swap_remove(&mut self, index: usize) -> T {
+        self.remove_node_p(index);
         let payload;
         if index != self.len() - 1 {
             payload = self.data.swap_remove(index).payload;
-            self.move_node(index);
+            self.move_node_p(index);
         } else {
             payload = self.data.remove(index).payload;
         }
@@ -90,72 +110,78 @@ impl<T> LinkedVec<T> {
     }
 
     /// Ensure the node in the new spots referants are pointing back.
-    fn move_node(&mut self, new: usize) {
-        self.set_next(self.data[new].prev, Some(new));
-        self.set_prev(self.data[new].next, Some(new));
+    fn move_node_p(&mut self, index: usize) {
+        let stored = Some(I::from_usize(index));
+        self.set_next(self.data[index].prev, stored);
+        self.set_prev(self.data[index].next, stored);
     }
 
-    fn insert_node_before(&mut self, inserted: usize, target: Option<usize>) {
+    fn insert_node_before(&mut self, inserted: I, target: Option<I>) {
         let other = self.get_prev(target);
-        self.data[inserted].prev = other;
-        self.data[inserted].next = target;
-        self.move_node(inserted);
+        self.pair(other, Some(inserted));
+        self.pair(Some(inserted), target);
     }
 
-    fn insert_node_after(&mut self, inserted: usize, target: Option<usize>) {
+    fn insert_node_after(&mut self, inserted: I, target: Option<I>) {
         let other = self.get_next(target);
-        self.data[inserted].next = other;
-        self.data[inserted].prev = target;
-        self.move_node(inserted);
+        self.pair(target, Some(inserted));
+        self.pair(Some(inserted), other);
     }
 
-    fn remove_node_l(&mut self, target: usize) {
-        self.set_prev(self.data[target].next, self.data[target].prev);
-        self.set_next(self.data[target].prev, self.data[target].next);
+    fn remove_node_p(&mut self, target: usize) {
+        self.pair(self.data[target].prev, self.data[target].next);
     }
 
     /// Gets `next` of the indexed node or `head` if `None`.
-    fn get_next(&mut self, target: Option<usize>) -> Option<usize> {
+    fn get_next(&self, target: Option<I>) -> Option<I> {
         match target {
-            Some(i) => self.data[i].next,
+            Some(i) => self.data[i.to_usize()].next,
             None => self.head,
         }
     }
 
     /// Gets `prev` of the indexed node or `tail` if `None`.
-    fn get_prev(&mut self, target: Option<usize>) -> Option<usize> {
+    fn get_prev(&self, target: Option<I>) -> Option<I> {
         match target {
-            Some(i) => self.data[i].prev,
+            Some(i) => self.data[i.to_usize()].prev,
             None => self.tail,
         }
     }
 
     /// Sets `next` of the indexed node or `head` if `None`.
-    fn set_next(&mut self, target: Option<usize>, value: Option<usize>) {
+    fn set_next(&mut self, target: Option<I>, value: Option<I>) {
         if let Some(i) = target {
-            self.data[i].next = value
+            self.data[i.to_usize()].next = value
         } else {
             self.head = value
         }
     }
 
     /// Sets `prev` of the indexed node or `tail` if `None`.
-    fn set_prev(&mut self, target: Option<usize>, value: Option<usize>) {
+    fn set_prev(&mut self, target: Option<I>, value: Option<I>) {
         if let Some(i) = target {
-            self.data[i].prev = value
+            self.data[i.to_usize()].prev = value
         } else {
             self.tail = value
         }
     }
+
+    fn pair(&mut self, first: Option<I>, second: Option<I>) {
+        self.set_next(first, second);
+        self.set_prev(second, first);
+    }
 }
 
-impl<T> Default for LinkedVec<T> {
+impl<T, I: StoreIndex> Default for LinkedVec<T, I>
+where
+    I: Copy + TryFrom<usize, Error: Debug> + Into<usize>,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Clone> Clone for LinkedVec<T> {
+impl<T: Clone, I: StoreIndex + Copy> Clone for LinkedVec<T, I> {
     fn clone(&self) -> Self {
         let mut ret = Self::new();
         ret.clone_from(self);
@@ -171,9 +197,9 @@ impl<T: Clone> Clone for LinkedVec<T> {
     }
 }
 
-impl<A> Extend<A> for LinkedVec<A> {
+impl<A, I: StoreIndex + Copy> Extend<A> for LinkedVec<A, I> {
     fn extend<T: IntoIterator<Item = A>>(&mut self, iter: T) {
-        let it = iter.into_iter();
+        let it = iter.into_iter(); // .take(I::get_max_inc() - self.len());
 
         let l = it.size_hint().0;
         if self.data.try_reserve(l).is_err() {
@@ -184,4 +210,15 @@ impl<A> Extend<A> for LinkedVec<A> {
             self.push_back(v);
         }
     }
+}
+
+#[inline(never)]
+fn index_out_of_bounds(index: impl Into<usize>, len: usize) -> ! {
+    let index: usize = index.into();
+    panic!("index (is {index}) should be < or <= len (is {len})");
+}
+
+#[cold]
+fn capacity_overflow() -> ! {
+    panic!("capacity overflow");
 }

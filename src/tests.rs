@@ -13,9 +13,8 @@ fn test_vecnode() {
     assert_eq!(obj.to_owned().next, None);
 }
 
-#[test]
-fn len_push_pop() {
-    let mut obj = LinkedVec::<isize>::new();
+fn single_len_push_pop<I: StoreIndex + Copy>() {
+    let mut obj = LinkedVec::<isize, I>::new();
     assert_eq!(obj.len(), 0);
     obj.push_back(3);
     assert_eq!(obj.len(), 1);
@@ -32,4 +31,28 @@ fn len_push_pop() {
     assert_eq!(obj.len(), 0);
     assert_eq!(obj.pop(), None);
     assert_eq!(obj.len(), 0);
+}
+
+#[test]
+fn len_push_pop_subsets() {
+    single_len_push_pop::<u8>();
+    single_len_push_pop::<u16>();
+    single_len_push_pop::<usize>();
+}
+
+#[test]
+fn len_push_pop_u_superset() {
+    single_len_push_pop::<u128>();
+}
+
+#[test]
+fn len_push_pop_orthagonal() {
+    single_len_push_pop::<i8>();
+    single_len_push_pop::<i16>();
+    single_len_push_pop::<isize>();
+}
+
+#[test]
+fn len_push_pop_i_superset() {
+    single_len_push_pop::<i128>();
 }
