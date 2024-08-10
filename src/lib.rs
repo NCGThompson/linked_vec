@@ -1,9 +1,13 @@
+#![no_std]
+
+extern crate alloc;
+
 mod inner_types;
 mod tests;
+pub mod iterators;
 
-use std::fmt::Debug;
-use std::usize;
-
+use core::{fmt::Debug, ptr, usize};
+use alloc::{collections, vec::Vec};
 use inner_types::{StoreIndex, VecNode};
 
 #[derive(Debug)]
@@ -28,6 +32,32 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn get_p(&self, index: usize) -> &T {
+        &self.data[index].payload
+    }
+
+    pub fn get_p_mut(&mut self, index: usize) -> &mut T {
+        &mut self.data[index].payload
+    }
+
+    /// Provides a reference to the front element, or `None` if the list is
+    /// empty.
+    ///
+    /// This operation should compute in *O*(1) time.
+    #[must_use]
+    pub fn front(&self) -> Option<&T> {
+        self.head.map(|x| self.get_p(x.to_usize()))
+    }
+
+    /// Provides a reference to the back element, or `None` if the list is
+    /// empty.
+    ///
+    /// This operation should compute in *O*(1) time.
+    #[must_use]
+    pub fn back(&self) -> Option<&T> {
+        self.tail.map(|x| self.get_p(x.to_usize()))
     }
 
     /// Inserts an element first in the linked list and last in the physical array.
@@ -84,6 +114,50 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
             index_out_of_bounds(index, self.len())
         }
         self.in_swap_remove(index)
+    }
+
+    /// Swaps two elements in the slice.
+    ///
+    /// If `a` equals to `b`, it's guaranteed that elements won't change value.
+    ///
+    /// # Arguments
+    ///
+    /// * a - The index of the first element
+    /// * b - The index of the second element
+    ///
+    /// # Panics
+    ///
+    /// Panics if `a` or `b` are out of bounds.
+    pub fn swap_p(&mut self, a: usize, b: usize) {
+        let pa = ptr::addr_of_mut!(self.data[a].payload);
+        let pb = ptr::addr_of_mut!(self.data[b].payload);
+        // SAFETY: `pa` and `pb` have been created from safe mutable references and refer
+        // to elements in the slice and therefore are guaranteed to be valid and aligned.
+        // Note that accessing the elements behind `a` and `b` is checked and will
+        // panic when out of bounds.
+        unsafe {
+            ptr::swap(pa, pb);
+        }
+    }
+
+    /// Tries to reserve capacity for at least `additional` more elements to be inserted.
+    /// The collection may reserve more space to speculatively avoid
+    /// frequent reallocations. After calling `try_reserve`, capacity will be
+    /// greater than or equal to `self.len() + additional` if it returns
+    /// `Ok(())`. Does nothing if capacity is already sufficient. This method
+    /// preserves the contents even if an error occurs.
+    ///
+    /// # Errors
+    ///
+    /// If the capacity overflows, or the allocator reports a failure, then an error
+    /// is returned.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), collections::TryReserveError> {
+        if I::MAX_USIZE.saturating_add(1) - self.len() < additional {
+            // A hacky way to instantiate TryReserveErrorKind::CapacityOverflow
+            self.data.try_reserve(usize::MAX)
+        } else {
+            self.data.try_reserve(additional)
+        }
     }
 
     fn push_p(&mut self, value: T) -> I {
@@ -199,12 +273,10 @@ impl<T: Clone, I: StoreIndex + Copy> Clone for LinkedVec<T, I> {
 
 impl<A, I: StoreIndex + Copy> Extend<A> for LinkedVec<A, I> {
     fn extend<T: IntoIterator<Item = A>>(&mut self, iter: T) {
-        let it = iter.into_iter(); // .take(I::get_max_inc() - self.len());
+        let it = iter.into_iter();
 
         let l = it.size_hint().0;
-        if self.data.try_reserve(l).is_err() {
-            self.data.reserve_exact(l);
-        }
+        _ = self.data.try_reserve(l);
 
         for v in it {
             self.push_back(v);

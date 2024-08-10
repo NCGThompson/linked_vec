@@ -1,5 +1,7 @@
 #![cfg(test)]
-use std::mem;
+use core::mem;
+
+use alloc::borrow::ToOwned as _;
 
 use super::*;
 

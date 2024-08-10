@@ -1,5 +1,6 @@
+use alloc::borrow::ToOwned;
 use nonmax;
-use std::{borrow::Borrow, fmt::Debug};
+use core::{borrow::Borrow, fmt::Debug};
 
 macro_rules! debug_unwrap {
     ($result:expr) => {
@@ -124,10 +125,11 @@ macro_rules! storeindex_for_nonmax {
                 Ok(Self::try_from(intermediate)?)
             }
 
+            #[cfg(not(debug_assertions))]
             unsafe fn from_usize_unchecked(value: usize) -> Self {
                 // Safety: Caller ensures value <= MAX_USIZE, which is
                 // in the range of Self. Self's MIN is at most 0.
-                unsafe { debug_unwrap!(Self::try_from(value as $prim)) }
+                unsafe { Self::new_unchecked(value as $prim) }
             }
         }
     };
