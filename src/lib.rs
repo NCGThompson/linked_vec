@@ -7,11 +7,10 @@ pub mod iterators;
 mod tests;
 
 use alloc::{collections, vec::Vec};
-use core::{fmt::Debug, ptr, usize};
+use core::{fmt::Debug, ptr};
 use inner_types::{StoreIndex, VecNode};
-use iterators::{Iter, IterMut, VecCursor, VecCursorMut};
+use iterators::{Iter, IterMut, IterP, VecCursor, VecCursorMut};
 
-#[derive(Debug)]
 pub struct LinkedVec<T, I: StoreIndex + Copy = usize> {
     data: Vec<VecNode<T, I>>,
     head: Option<I>,
@@ -32,10 +31,11 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
     /// After this operation, `other` becomes empty.
     ///
     /// While in regular linked lists, this is *O*(1),
-    /// this is *O*(n). It is provided for API consistency.
+    /// this is *O*(n). It is provided only for API consistency.
     pub fn append(&mut self, other: &mut Self) {
-        let _ = other;
-        todo!()
+        let mut third = Self::new();
+        core::mem::swap(other, &mut third);
+        self.extend(third)
     }
 
     pub fn len(&self) -> usize {
@@ -100,7 +100,7 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
 
     /// Inserts an element last in the linked list and last in the physical array.
     pub fn push_back(&mut self, value: T) {
-        let inserted = self.push_p(value);
+        let inserted: I = self.push_p(value);
 
         // Insert at tail = Insert after whatever is currently pointed to by tail.
         self.insert_node_after(inserted, self.tail)
@@ -149,13 +149,13 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
     /// Provides a forward iterator.
     #[must_use]
     pub fn iter(&self) -> Iter<'_, T, I> {
-        todo!()
+        Iter::new(self)
     }
 
     /// Provides a forward iterator with mutable references.
     #[must_use]
     pub fn iter_mut(&mut self) -> IterMut<'_, T, I> {
-        todo!()
+        IterMut::new(self)
     }
 
     pub fn clear(&mut self) {
@@ -382,15 +382,22 @@ impl<T: Clone, I: StoreIndex + Copy> Clone for LinkedVec<T, I> {
 
 impl<T: PartialOrd, I: StoreIndex + Copy> PartialEq for LinkedVec<T, I> {
     fn eq(&self, other: &Self) -> bool {
-        let _ = other;
-        todo!()
+        self.iter().eq(other.iter())
     }
 }
 
 impl<T: PartialOrd, I: StoreIndex + Copy> PartialOrd for LinkedVec<T, I> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        let _ = other;
-        todo!()
+        self.iter().partial_cmp(other.iter())
+    }
+}
+
+impl<T: Debug, I: StoreIndex + Copy> Debug for LinkedVec<T, I> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // FIXME: Should the format be changed?
+        f.debug_map()
+            .entries(IterP::new(self).map(|i| (i, self.get_p(i))))
+            .finish()
     }
 }
 

@@ -420,13 +420,18 @@ fn test_fuzz() {
 
 #[test]
 fn test_show() {
-    let list: LinkedVec<_> = (0..10).collect();
-    assert_eq!(format!("{list:?}"), "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+    let mut list: LinkedVec<_> = (0..10).collect();
+    list.pop_front();
+    list.push_front(0);
+    assert_eq!(
+        format!("{list:?}"),
+        "{9: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 0: 9}"
+    );
 
     let list: LinkedVec<_> = ["just", "one", "test", "more"].into_iter().collect();
     assert_eq!(
         format!("{list:?}"),
-        "[\"just\", \"one\", \"test\", \"more\"]"
+        "{0: \"just\", 1: \"one\", 2: \"test\", 3: \"more\"}"
     );
 }
 

@@ -1,4 +1,10 @@
-use crate::{inner_types::StoreIndex, LinkedVec};
+use alloc::vec::Vec;
+
+pub use crate::iterators::SafeIterMut as IterMut;
+use crate::{
+    inner_types::{StoreIndex, VecNode},
+    LinkedVec,
+};
 
 #[derive(Debug)]
 pub struct VecCursor<'a, T: 'a, I: Copy + StoreIndex> {
@@ -106,10 +112,7 @@ impl<'a, T: 'a, I: Copy + StoreIndex> VecCursor<'a, T, I> {
             // We had a previous element, so let's go to its prev
             Some(current) => {
                 self.current_pa = self.list.data[current].prev.map(|x| x.to_usize());
-                self.index_la = self
-                    .index_la
-                    .checked_sub(1)
-                    .unwrap_or_else(|| self.list.len());
+                self.index_la = self.index_la.checked_sub(1).unwrap_or(self.list.len());
             }
         }
     }
@@ -293,11 +296,8 @@ impl<'a, T: 'a, I: Copy + StoreIndex> VecCursorMut<'a, T, I> {
             }
             // We had a previous element, so let's go to its prev
             Some(current) => {
-                self.current_pa = self.list.data[current].next.map(|x| x.to_usize());
-                self.index_la = self
-                    .index_la
-                    .checked_sub(1)
-                    .unwrap_or_else(|| self.list.len());
+                self.current_pa = self.list.data[current].prev.map(|x| x.to_usize());
+                self.index_la = self.index_la.checked_sub(1).unwrap_or(self.list.len());
             }
         }
     }
@@ -310,7 +310,10 @@ impl<'a, T: 'a, I: Copy + StoreIndex> VecCursorMut<'a, T, I> {
     #[must_use]
     pub fn peek_next(&mut self) -> Option<&mut T> {
         // FIXME Maybe add a public method to not require access to list internals
-        let next_p = self.list.data[self.current_pa?].next?.to_usize();
+        let next_p = self
+            .list
+            .get_next(self.current_pa.map(|x| I::from_usize(x)))?
+            .to_usize();
         Some(self.list.get_p_mut(next_p))
     }
 
@@ -322,7 +325,10 @@ impl<'a, T: 'a, I: Copy + StoreIndex> VecCursorMut<'a, T, I> {
     #[must_use]
     pub fn peek_prev(&mut self) -> Option<&mut T> {
         // FIXME Maybe add a public method to not require access to list internals
-        let prev_p = self.list.data[self.current_pa?].prev?.to_usize();
+        let prev_p = self
+            .list
+            .get_prev(self.current_pa.map(|x| I::from_usize(x)))?
+            .to_usize();
         Some(self.list.get_p_mut(prev_p))
     }
 
@@ -479,22 +485,51 @@ impl<T, I: Copy + StoreIndex> Clone for NonEmptyVecCursor<'_, T, I> {
 #[derive(Debug, Clone, Copy)]
 pub struct Iter<'a, T: 'a, I: Copy + StoreIndex> {
     list: &'a LinkedVec<T, I>,
-    head: Option<usize>, // Could be I,
-    tail: Option<usize>, // Could be I,
+    head: usize, // Could be I,
+    tail: usize, // Could be I,
     len: usize,
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> Iter<'a, T, I> {
+    pub fn new(list: &'a LinkedVec<T, I>) -> Self {
+        Self {
+            head: list.head.map_or(0, |x| x.to_usize()),
+            tail: list.tail.map_or(0, |x| x.to_usize()),
+            len: list.len(),
+            list,
+        }
+    }
 }
 
 impl<'a, T: 'a, I: Copy + StoreIndex> Iterator for Iter<'a, T, I> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_node = &self.list.data[self.head];
+        self.head = last_node.next.map_or(0, |x| x.to_usize());
+        Some(&last_node.payload)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
     }
 }
 
 impl<'a, T: 'a, I: Copy + StoreIndex> DoubleEndedIterator for Iter<'a, T, I> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        todo!()
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_node = &self.list.data[self.tail];
+        self.tail = last_node.prev.map_or(0, |x| x.to_usize());
+        Some(&last_node.payload)
     }
 }
 
@@ -504,49 +539,108 @@ impl<'a, T: 'a, I: Copy + StoreIndex> IntoIterator for &'a LinkedVec<T, I> {
 
     /// Consumes the list into an iterator yielding elements by value.
     fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            list: self,
-            head: self.head.map(|x| x.to_usize()),
-            tail: self.tail.map(|x| x.to_usize()),
-            len: self.len(),
-        }
+        Self::IntoIter::new(self)
     }
 }
 
-#[derive(Debug)]
-pub struct IterMut<'a, T: 'a, I: Copy + StoreIndex> {
-    list: &'a mut LinkedVec<T, I>,
-    head: Option<usize>, // Could be I,
-    tail: Option<usize>, // Could be I,
-    len: usize,
-}
+// #[derive(Debug)]
+// pub struct IterMut<'a, T: 'a, I: Copy + StoreIndex> {
+//     list: &'a mut LinkedVec<T, I>,
+//     head: Option<usize>, // Could be I,
+//     tail: Option<usize>, // Could be I,
+//     len: usize,
+// }
 
-impl<'a, T: 'a, I: Copy + StoreIndex> Iterator for IterMut<'a, T, I> {
-    type Item = &'a mut T;
+// impl<'a, T: 'a, I: Copy + StoreIndex> Iterator for IterMut<'a, T, I> {
+//     type Item = &'a mut T;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
+//     fn next(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
 
-impl<'a, T: 'a, I: Copy + StoreIndex> DoubleEndedIterator for IterMut<'a, T, I> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
+// impl<'a, T: 'a, I: Copy + StoreIndex> DoubleEndedIterator for IterMut<'a, T, I> {
+//     fn next_back(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
 
 impl<'a, T: 'a, I: Copy + StoreIndex> IntoIterator for &'a mut LinkedVec<T, I> {
     type Item = &'a mut T;
     type IntoIter = IterMut<'a, T, I>;
 
-    /// Consumes the list into an iterator yielding elements by value.
+    // /// Consumes the list into an iterator yielding elements by value.
+    // fn into_iter(self) -> Self::IntoIter {
+    //     Self::IntoIter {
+    //         head: self.head.map(|x| x.to_usize()),
+    //         tail: self.tail.map(|x| x.to_usize()),
+    //         len: self.len(),
+    //         list: self, // Needs to be last
+    //     }
+    // }
+
     fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            head: self.head.map(|x| x.to_usize()),
-            tail: self.tail.map(|x| x.to_usize()),
-            len: self.len(),
-            list: self, // Needs to be last
+        Self::IntoIter::new(self)
+    }
+}
+
+/// Exported as IterMut
+#[derive(Debug)]
+pub struct SafeIterMut<'a, T: 'a, I: Copy + StoreIndex> {
+    ref_slice: Vec<Option<&'a mut VecNode<T, I>>>,
+    head: usize,
+    tail: usize,
+    len: usize,
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> SafeIterMut<'a, T, I> {
+    #[must_use]
+    pub fn new(list: &'a mut LinkedVec<T, I>) -> Self {
+        let len = list.len();
+        let (head, tail) = match (list.head, list.tail) {
+            (None, None) => (0, 0),
+            (Some(h), Some(t)) => (h.to_usize(), t.to_usize()),
+            _ => unreachable!(),
+        };
+        let ref_slice: Vec<_> = list.data.iter_mut().map(|x| Some(x)).collect();
+        Self {
+            ref_slice,
+            head,
+            tail,
+            len,
         }
+    }
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> Iterator for SafeIterMut<'a, T, I> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_node = self.ref_slice[self.head].take().unwrap();
+        self.head = last_node.next.map_or(0, |x| x.to_usize());
+        Some(&mut last_node.payload)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> DoubleEndedIterator for SafeIterMut<'a, T, I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_node = self.ref_slice[self.tail].take().unwrap();
+        self.tail = last_node.prev.map_or(0, |x| x.to_usize());
+        Some(&mut last_node.payload)
     }
 }
 
@@ -614,5 +708,56 @@ impl<A, I: StoreIndex + Copy> FromIterator<A> for LinkedVec<A, I> {
         let mut list = Self::new();
         list.extend(iter);
         list
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IterP<'a, T: 'a, I: Copy + StoreIndex> {
+    list: &'a LinkedVec<T, I>,
+    head: usize, // Could be I,
+    tail: usize, // Could be I,
+    len: usize,
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> IterP<'a, T, I> {
+    pub fn new(list: &'a LinkedVec<T, I>) -> Self {
+        Self {
+            head: list.head.map_or(0, |x| x.to_usize()),
+            tail: list.tail.map_or(0, |x| x.to_usize()),
+            len: list.len(),
+            list,
+        }
+    }
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> Iterator for IterP<'a, T, I> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_index = self.head;
+        self.head = self.list.data[last_index].next.map_or(0, |x| x.to_usize());
+        Some(last_index)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<'a, T: 'a, I: Copy + StoreIndex> DoubleEndedIterator for IterP<'a, T, I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.len <= 0 {
+            return None;
+        }
+        self.len -= 1;
+
+        let last_index = self.tail;
+        self.tail = self.list.data[last_index].prev.map_or(0, |x| x.to_usize());
+        Some(last_index)
     }
 }
