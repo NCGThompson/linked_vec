@@ -1,6 +1,6 @@
 use alloc::borrow::ToOwned;
-use nonmax;
 use core::{borrow::Borrow, fmt::Debug};
+use nonmax;
 
 macro_rules! debug_unwrap {
     ($result:expr) => {

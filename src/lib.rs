@@ -3,15 +3,16 @@
 extern crate alloc;
 
 mod inner_types;
-mod tests;
 pub mod iterators;
+mod tests;
 
-use core::{fmt::Debug, ptr, usize};
 use alloc::{collections, vec::Vec};
+use core::{fmt::Debug, ptr, usize};
 use inner_types::{StoreIndex, VecNode};
+use iterators::{Iter, IterMut, VecCursor, VecCursorMut};
 
 #[derive(Debug)]
-pub struct LinkedVec<T, I: StoreIndex + Copy> {
+pub struct LinkedVec<T, I: StoreIndex + Copy = usize> {
     data: Vec<VecNode<T, I>>,
     head: Option<I>,
     tail: Option<I>,
@@ -19,11 +20,22 @@ pub struct LinkedVec<T, I: StoreIndex + Copy> {
 
 impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
     pub const fn new() -> Self {
-        LinkedVec {
+        Self {
             data: Vec::new(),
             head: None,
             tail: None,
         }
+    }
+
+    /// Moves all elements from `other` to the end of the list.
+    ///
+    /// After this operation, `other` becomes empty.
+    ///
+    /// While in regular linked lists, this is *O*(1),
+    /// this is *O*(n). It is provided for API consistency.
+    pub fn append(&mut self, other: &mut Self) {
+        let _ = other;
+        todo!()
     }
 
     pub fn len(&self) -> usize {
@@ -51,6 +63,15 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
         self.head.map(|x| self.get_p(x.to_usize()))
     }
 
+    /// Provides a mutable reference to the front element, or `None` if the list is
+    /// empty.
+    ///
+    /// This operation should compute in *O*(1) time.
+    #[must_use]
+    pub fn front_mut(&mut self) -> Option<&mut T> {
+        self.head.map(|x| self.get_p_mut(x.to_usize()))
+    }
+
     /// Provides a reference to the back element, or `None` if the list is
     /// empty.
     ///
@@ -58,6 +79,15 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
     #[must_use]
     pub fn back(&self) -> Option<&T> {
         self.tail.map(|x| self.get_p(x.to_usize()))
+    }
+
+    /// Provides a mutable reference to the back element, or `None` if the list is
+    /// empty.
+    ///
+    /// This operation should compute in *O*(1) time.
+    #[must_use]
+    pub fn back_mut(&mut self) -> Option<&mut T> {
+        self.tail.map(|x| self.get_p_mut(x.to_usize()))
     }
 
     /// Inserts an element first in the linked list and last in the physical array.
@@ -114,6 +144,85 @@ impl<T, I: StoreIndex + Copy> LinkedVec<T, I> {
             index_out_of_bounds(index, self.len())
         }
         self.in_swap_remove(index)
+    }
+
+    /// Provides a forward iterator.
+    #[must_use]
+    pub fn iter(&self) -> Iter<'_, T, I> {
+        todo!()
+    }
+
+    /// Provides a forward iterator with mutable references.
+    #[must_use]
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, I> {
+        todo!()
+    }
+
+    pub fn clear(&mut self) {
+        // This doesn't clear in a particular order.
+        // FIXME: Should it?
+        self.data.clear();
+        self.head = None;
+        self.tail = None;
+    }
+
+    pub fn contains(&self, x: &T) -> bool
+    where
+        T: PartialEq<T>,
+    {
+        self.iter().any(|e| e == x)
+    }
+
+    pub fn cursor_front(&self) -> VecCursor<'_, T, I> {
+        VecCursor {
+            index_la: 0,
+            current_pa: self.head.map(|x| x.to_usize()),
+            list: self,
+        }
+    }
+
+    pub fn cursor_front_mut(&mut self) -> VecCursorMut<'_, T, I> {
+        VecCursorMut {
+            index_la: 0,
+            current_pa: self.head.map(|x| x.to_usize()),
+            list: self,
+        }
+    }
+
+    pub fn cursor_back(&self) -> VecCursor<'_, T, I> {
+        match self.tail {
+            // list nonempty
+            Some(tail) => VecCursor {
+                index_la: self.len() - 1,
+                current_pa: Some(tail.to_usize()),
+                list: self,
+            },
+
+            // list empty
+            None => VecCursor {
+                index_la: 0,
+                current_pa: None,
+                list: self,
+            },
+        }
+    }
+
+    pub fn cursor_back_mut(&mut self) -> VecCursorMut<'_, T, I> {
+        match self.tail {
+            // list nonempty
+            Some(tail) => VecCursorMut {
+                index_la: self.len() - 1,
+                current_pa: Some(tail.to_usize()),
+                list: self,
+            },
+
+            // list empty
+            None => VecCursorMut {
+                index_la: 0,
+                current_pa: None,
+                list: self,
+            },
+        }
     }
 
     /// Swaps two elements in the slice.
@@ -271,16 +380,17 @@ impl<T: Clone, I: StoreIndex + Copy> Clone for LinkedVec<T, I> {
     }
 }
 
-impl<A, I: StoreIndex + Copy> Extend<A> for LinkedVec<A, I> {
-    fn extend<T: IntoIterator<Item = A>>(&mut self, iter: T) {
-        let it = iter.into_iter();
+impl<T: PartialOrd, I: StoreIndex + Copy> PartialEq for LinkedVec<T, I> {
+    fn eq(&self, other: &Self) -> bool {
+        let _ = other;
+        todo!()
+    }
+}
 
-        let l = it.size_hint().0;
-        _ = self.data.try_reserve(l);
-
-        for v in it {
-            self.push_back(v);
-        }
+impl<T: PartialOrd, I: StoreIndex + Copy> PartialOrd for LinkedVec<T, I> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        let _ = other;
+        todo!()
     }
 }
 

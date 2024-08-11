@@ -1,7 +1,8 @@
 #![cfg(test)]
-use core::mem;
+mod std_stolen_tests;
 
 use alloc::borrow::ToOwned as _;
+use core::mem;
 
 use super::*;
 
